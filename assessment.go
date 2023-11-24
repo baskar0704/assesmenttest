@@ -10,28 +10,28 @@ import (
 )
 
 var (
-	Requestchannel   chan map[string]string
-	Convertedchannel chan models.Converted
+	RequestChan   chan map[string]string
+	Convertedchan chan models.Converted
 )
 
 func main() {
-	Requestchannel = make(chan map[string]string)
-	Convertedchannel = make(chan models.Converted)
+	RequestChan = make(chan map[string]string)
+	Convertedchan = make(chan models.Converted)
 	go worker()
 
 	router := http.NewServeMux()
-	router.HandleFunc("/process", ProcessHandler)
+	router.HandleFunc("/convert", Handler)
 	server := &http.Server{
-		Addr:    ":8000",
+		Addr:    ":8100",
 		Handler: router,
 	}
-	fmt.Println("Server listening on :8000")
+	fmt.Println("Server listening on :8100")
 	err := server.ListenAndServe()
 	if err != nil {
 		fmt.Println(err)
 	}
 }
-func ProcessHandler(w http.ResponseWriter, r *http.Request) {
+func Handler(w http.ResponseWriter, r *http.Request) {
 	var req map[string]string
 
 	decoder := json.NewDecoder(r.Body)
@@ -41,23 +41,15 @@ func ProcessHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	Requestchannel <- req
-	json.NewEncoder(w).Encode(<-Convertedchannel)
+	RequestChan <- req
+	json.NewEncoder(w).Encode(<-Convertedchan)
 
 }
 func Convert(m map[string]string) {
-	ConvertRequest := new(models.Converted)
-	ConvertRequest.Event = m["ev"]
-	ConvertRequest.EventType = m["et"]
-	ConvertRequest.AppID = m["id"]
-	ConvertRequest.UserID = m["uid"]
-	ConvertRequest.MessageID = m["mid"]
-	ConvertRequest.PageTitle = m["t"]
-	ConvertRequest.PageURL = m["p"]
-	ConvertRequest.BrowserLanguage = m["l"]
-	ConvertRequest.ScreenSize = m["cs"]
-	ConvertRequest.Attributes = make(map[string]models.Attribute)
-	ConvertRequest.UserTraits = make(map[string]models.Attribute)
+	ConRequest := new(models.Converted)
+
+	ConRequest.Attributes = make(map[string]models.Attribute)
+	ConRequest.UserTraits = make(map[string]models.Attribute)
 	pattern := "^atrk.*"
 	pattern1 := "^uatrk.*"
 	search, err := regexp.Compile(pattern)
@@ -78,7 +70,7 @@ func Convert(m map[string]string) {
 			var atr models.Attribute
 			atr.Value = m[v]
 			atr.Type = m[t]
-			ConvertRequest.Attributes[value] = atr
+			ConRequest.Attributes[value] = atr
 		}
 		if search1.MatchString(key) {
 			str := strings.Split(key, "uatrk")
@@ -87,14 +79,23 @@ func Convert(m map[string]string) {
 			var atr models.Attribute
 			atr.Value = m[v]
 			atr.Type = m[t]
-			ConvertRequest.UserTraits[value] = atr
+			ConRequest.UserTraits[value] = atr
 		}
 	}
-	Convertedchannel <- *ConvertRequest
+	ConRequest.Event = m["ev"]
+	ConRequest.EventType = m["et"]
+	ConRequest.AppID = m["id"]
+	ConRequest.UserID = m["uid"]
+	ConRequest.MessageID = m["mid"]
+	ConRequest.PageTitle = m["t"]
+	ConRequest.PageURL = m["p"]
+	ConRequest.BrowserLanguage = m["l"]
+	ConRequest.ScreenSize = m["cs"]
+	Convertedchan <- *ConRequest
 }
 
 func worker() {
-	for Req := range Requestchannel {
+	for Req := range RequestChan {
 		Convert(Req)
 	}
 }
